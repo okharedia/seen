@@ -23,7 +23,17 @@ app.get('/api/transactions/:customerId', async (req: Request, res: Response, nex
         const transactions: Transaction[] = response.data;
 
         // Filter transactions for the specific customer
+        // This could probably be an indexed query to the database
+        //  - Get all transactions by customerId (being the index) and probably a date range
+        //  - I might use a DynamoDB here with customerId as the partition key and transactionDate as the sort key
+        //  - Depending on the usecase, might return a couple of thousand records, so we'll need to paginate
         const customerTransactions = transactions.filter(t => t.customerId === customerId);
+
+        // Once we have the transactions, we can group, sort and synthesize the data
+        //   - As a second step of code improvement, once the integration tests are in place,
+        //   - I'll probably want to move all this logic into its own component with the
+        //   - function synthesizeTransactions(transactions: Transaction[]): SynthesizedTransaction[]
+        //   - This will allow me to test this component in isolation
 
         // Group transactions by authorizationCode
         const groupedTransactions = customerTransactions.reduce((acc, curr) => {
@@ -89,7 +99,17 @@ app.get('/api/customers/:customerId/relationships', async (req: Request, res: Re
         //       - 1 received P2P_RECEIVE from target customer at some point
         //       - 1 has used the same DEVICE with target customer
         const relatedCustomers = new Map<number, Set<string>>();
-
+        // I see this map as its own database
+        // It could be its own service with a  customer relationship aggregation table 
+        // Over time, it will consume transactions and aggregate customer relationships over this data
+        // This will eliminate the need to aggregate the data in code
+        // I would probably want to use a DynamoDB here with a single partition key of customerId and sort key of relationCustomerId and relationType
+        // and enforce uniqueness on the sort key
+        //  - e.g 
+        //      - customer1, relatedCustomer2#P2P_SEND
+        //      - customer1, relatedCustomer2#P2P_RECEIVE
+        //      - customer1, relatedCustomer2#DEVICE
+        //      - customer1, relatedCustomer3#P2P_SEND
        
         customerTransactions.forEach(transaction => {
             // 2. Find P2P_SEND relationships
@@ -142,6 +162,9 @@ app.get('/api/customers/:customerId/relationships', async (req: Request, res: Re
         });
 
         // Format the response
+        //  - I'll probably want to move this logic into its own component with the
+        //  - function synthesizeCustomerRelationships(relatedCustomers: Map<number, Set<string>>): CustomerRelationshipResponse
+        //  - This will allow me to test this component in isolation
         const result: CustomerRelationshipResponse = {
             relatedCustomers: Array.from(relatedCustomers.entries()).flatMap(([customerId, relationTypes]) => 
                 Array.from(relationTypes).map(relationType => ({
